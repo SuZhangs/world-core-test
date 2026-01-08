@@ -1,0 +1,23 @@
+{
+  "name": "@worldfork/sdk-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run typecheck && vitest run",
+    "test:unit": "vitest run src/unit",
+    "test:integration": "vitest run src/integration",
+    "test:contract": "vitest run src/contract",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@worldfork/sdk": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "cross-env": "^7.0.3",
+    "msw": "^2.3.5",
+    "tsx": "^4.7.1",
+    "typescript": "^5.5.4",
+    "vitest": "^1.5.2"
+  }
+}
