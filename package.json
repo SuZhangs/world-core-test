@@ -1,0 +1,10 @@
+{
+  "name": "world-core-test",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "sdk:test": "npm -w packages/sdk-tests test"
+  }
+}
