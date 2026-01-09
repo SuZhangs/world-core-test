@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(currentDir, '../../..');
+const repoRoot = path.resolve(currentDir, '../../../../../World-Fork-Core');
 const openApiPath = path.join(repoRoot, 'openapi', 'openapi.json');
 
 describe('OpenAPI contract checks', () => {
@@ -20,8 +20,7 @@ describe('OpenAPI contract checks', () => {
       '/v1/worlds/{worldId}/units/{unitId}',
       '/v1/worlds/{worldId}/commits',
       '/v1/worlds/{worldId}/diff',
-      '/v1/worlds/{worldId}/merge/preview',
-      '/v1/worlds/{worldId}/merge/apply'
+      '/v1/worlds/{worldId}/merge'
     ];
 
     const missing = requiredPaths.filter((p) => !paths[p]);
@@ -45,9 +44,9 @@ describe('OpenAPI contract checks', () => {
       getUnit: { method: 'get', path: '/v1/worlds/{worldId}/units/{unitId}' },
       commit: { method: 'post', path: '/v1/worlds/{worldId}/commits' },
       listCommits: { method: 'get', path: '/v1/worlds/{worldId}/commits' },
-      diff: { method: 'post', path: '/v1/worlds/{worldId}/diff' },
-      mergePreview: { method: 'post', path: '/v1/worlds/{worldId}/merge/preview' },
-      mergeApply: { method: 'post', path: '/v1/worlds/{worldId}/merge/apply' }
+      diff: { method: 'get', path: '/v1/worlds/{worldId}/diff' },
+      mergePreview: { method: 'post', path: '/v1/worlds/{worldId}/merge' },
+      mergeApply: { method: 'post', path: '/v1/worlds/{worldId}/merge' }
     };
 
     const missing: string[] = [];

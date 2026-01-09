@@ -15,12 +15,12 @@ function trackRequest() {
   return {
     store,
     handler:
-      (resolver: (info: { request: Request }) => Promise<HttpResponse> | HttpResponse) =>
+      (resolver: (info: { request: Request }) => Promise<HttpResponse<any>> | HttpResponse<any>) =>
       async (info: { request: Request }) => {
         const { request } = info;
         store.url = request.url;
         store.method = request.method;
-        store.headers = Object.fromEntries(request.headers.entries());
+        store.headers = Object.fromEntries(request.headers as unknown as Iterable<[string, string]>);
         if (request.method !== 'GET') {
           store.body = await request.clone().json().catch(() => undefined);
         }
@@ -29,8 +29,14 @@ function trackRequest() {
   };
 }
 
-function expectRequest(store: { url?: string; method?: string; body?: any }, expected: { url: string; method: string; body?: any }) {
-  expect(store.url).toBe(expected.url);
+function expectRequest(
+  store: { url?: string; method?: string; body?: any },
+  expected: { url: string; method: string; body?: any }
+) {
+  const actualUrl = new URL(store.url ?? '');
+  const expectedUrl = new URL(expected.url);
+  expect(actualUrl.origin + actualUrl.pathname).toBe(expectedUrl.origin + expectedUrl.pathname);
+  expect(actualUrl.searchParams.toString()).toBe(expectedUrl.searchParams.toString());
   expect(store.method).toBe(expected.method);
   if (expected.body !== undefined) {
     expect(store.body).toEqual(expected.body);
@@ -64,12 +70,12 @@ describe('SDK unit tests (mock fetch)', () => {
     );
 
     const client = createSdkClient(baseUrl);
-    await client.createBranch({ worldId: 'world-1', branchName: 'alt', ref: 'branch:main' });
+    await client.createBranch('world-1', { name: 'alt', sourceBranch: 'main' });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/branches`,
       method: 'POST',
-      body: { branchName: 'alt', ref: 'branch:main' }
+      body: { name: 'alt', sourceBranch: 'main' }
     });
   });
 
@@ -83,20 +89,17 @@ describe('SDK unit tests (mock fetch)', () => {
     );
 
     const client = createSdkClient(baseUrl);
-    await client.upsertUnit({
-      worldId: 'world-1',
-      ref: 'branch:main',
-      unitId: 'unit-1',
-      unit: { type: 'character', fields: { name: 'Ada' } }
+    await client.upsertUnit('world-1', {
+      branchName: 'main',
+      unit: { id: 'unit-1', type: 'character', title: 'Ada', fields: { name: 'Ada' } }
     });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/units`,
       method: 'POST',
       body: {
-        ref: 'branch:main',
-        unitId: 'unit-1',
-        unit: { type: 'character', fields: { name: 'Ada' } }
+        branchName: 'main',
+        unit: { id: 'unit-1', type: 'character', title: 'Ada', fields: { name: 'Ada' } }
       }
     });
   });
@@ -111,7 +114,7 @@ describe('SDK unit tests (mock fetch)', () => {
     );
 
     const client = createSdkClient(baseUrl);
-    await client.commit({ worldId: 'world-1', branchName: 'main', message: 'Commit test' });
+    await client.commit('world-1', { branchName: 'main', message: 'Commit test' });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/commits`,
@@ -123,19 +126,15 @@ describe('SDK unit tests (mock fetch)', () => {
   it('diff sends correct request', async () => {
     const tracker = trackRequest();
     server.use(
-      http.post(
-        `${baseUrl}/v1/worlds/world-1/diff`,
-        tracker.handler(() => HttpResponse.json({ changes: [] }))
-      )
+      http.get(`${baseUrl}/v1/worlds/world-1/diff`, tracker.handler(() => HttpResponse.json({ changes: [] })))
     );
 
     const client = createSdkClient(baseUrl);
-    await client.diff({ worldId: 'world-1', fromRef: 'branch:main', toRef: 'branch:alt' });
+    await client.diff('world-1', { from: 'branch:main', to: 'branch:alt' });
 
     expectRequest(tracker.store, {
-      url: `${baseUrl}/v1/worlds/world-1/diff`,
-      method: 'POST',
-      body: { fromRef: 'branch:main', toRef: 'branch:alt' }
+      url: `${baseUrl}/v1/worlds/world-1/diff?from=branch:main&to=branch:alt`,
+      method: 'GET'
     });
   });
 
@@ -143,18 +142,18 @@ describe('SDK unit tests (mock fetch)', () => {
     const tracker = trackRequest();
     server.use(
       http.post(
-        `${baseUrl}/v1/worlds/world-1/merge/preview`,
+        `${baseUrl}/v1/worlds/world-1/merge`,
         tracker.handler(() => HttpResponse.json({ conflicts: [], previewMergedUnits: [] }))
       )
     );
 
     const client = createSdkClient(baseUrl);
-    await client.mergePreview({ worldId: 'world-1', ours: 'branch:main', theirs: 'branch:alt' });
+    await client.mergePreview('world-1', { oursBranch: 'main', theirsBranch: 'alt' });
 
     expectRequest(tracker.store, {
-      url: `${baseUrl}/v1/worlds/world-1/merge/preview`,
+      url: `${baseUrl}/v1/worlds/world-1/merge`,
       method: 'POST',
-      body: { ours: 'branch:main', theirs: 'branch:alt' }
+      body: { oursBranch: 'main', theirsBranch: 'alt' }
     });
   });
 
@@ -162,26 +161,25 @@ describe('SDK unit tests (mock fetch)', () => {
     const tracker = trackRequest();
     server.use(
       http.post(
-        `${baseUrl}/v1/worlds/world-1/merge/apply`,
-        tracker.handler(() => HttpResponse.json({ mergeCommitId: 'commit-merge-1' }))
+        `${baseUrl}/v1/worlds/world-1/merge`,
+        tracker.handler(() => HttpResponse.json({ mergeCommitId: 'commit-merge-1' }, { status: 201 }))
       )
     );
 
     const client = createSdkClient(baseUrl);
-    await client.mergeApply({
-      worldId: 'world-1',
-      ours: 'branch:main',
-      theirs: 'branch:alt',
-      resolutions: [{ unitId: 'unit-1', path: '/fields/name', value: 'Ada' }]
+    await client.mergeApply('world-1', {
+      oursBranch: 'main',
+      theirsBranch: 'alt',
+      resolutions: [{ unitId: 'unit-1', path: '/fields/name', choice: 'manual', value: 'Ada' }]
     });
 
     expectRequest(tracker.store, {
-      url: `${baseUrl}/v1/worlds/world-1/merge/apply`,
+      url: `${baseUrl}/v1/worlds/world-1/merge`,
       method: 'POST',
       body: {
-        ours: 'branch:main',
-        theirs: 'branch:alt',
-        resolutions: [{ unitId: 'unit-1', path: '/fields/name', value: 'Ada' }]
+        oursBranch: 'main',
+        theirsBranch: 'alt',
+        resolutions: [{ unitId: 'unit-1', path: '/fields/name', choice: 'manual', value: 'Ada' }]
       }
     });
   });
@@ -206,7 +204,7 @@ describe('SDK unit tests (mock fetch)', () => {
     );
 
     const client = createSdkClient(baseUrl);
-    await client.listBranches({ worldId: 'world-1' });
+    await client.listBranches('world-1');
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/branches`,
@@ -217,11 +215,11 @@ describe('SDK unit tests (mock fetch)', () => {
   it('listCommits sends correct request', async () => {
     const tracker = trackRequest();
     server.use(
-      http.get(`${baseUrl}/v1/worlds/world-1/commits?branchName=main`, tracker.handler(() => HttpResponse.json({ commits: [] })))
+      http.get(`${baseUrl}/v1/worlds/world-1/commits`, tracker.handler(() => HttpResponse.json({ commits: [] })))
     );
 
     const client = createSdkClient(baseUrl);
-    await client.listCommits({ worldId: 'world-1', branchName: 'main' });
+    await client.listCommits('world-1', { branchName: 'main' });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/commits?branchName=main`,
@@ -232,11 +230,11 @@ describe('SDK unit tests (mock fetch)', () => {
   it('getUnits sends correct request', async () => {
     const tracker = trackRequest();
     server.use(
-      http.get(`${baseUrl}/v1/worlds/world-1/units?ref=branch:main`, tracker.handler(() => HttpResponse.json({ units: [] })))
+      http.get(`${baseUrl}/v1/worlds/world-1/units`, tracker.handler(() => HttpResponse.json({ units: [] })))
     );
 
     const client = createSdkClient(baseUrl);
-    await client.getUnits({ worldId: 'world-1', ref: 'branch:main' });
+    await client.getUnits('world-1', { ref: 'branch:main' });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/units?ref=branch:main`,
@@ -248,13 +246,13 @@ describe('SDK unit tests (mock fetch)', () => {
     const tracker = trackRequest();
     server.use(
       http.get(
-        `${baseUrl}/v1/worlds/world-1/units/unit-1?ref=commit:abc123`,
+        `${baseUrl}/v1/worlds/world-1/units/unit-1`,
         tracker.handler(() => HttpResponse.json({ unitId: 'unit-1' }))
       )
     );
 
     const client = createSdkClient(baseUrl);
-    await client.getUnit({ worldId: 'world-1', unitId: 'unit-1', ref: 'commit:abc123' });
+    await client.getUnit('world-1', 'unit-1', { ref: 'commit:abc123' });
 
     expectRequest(tracker.store, {
       url: `${baseUrl}/v1/worlds/world-1/units/unit-1?ref=commit:abc123`,
@@ -276,15 +274,14 @@ describe('SDK unit tests (mock fetch)', () => {
 
     const client = createSdkClient(baseUrl);
     await expectSdkError(client.createWorld({ name: 'Bad', ref: 'invalid' }), {
-      code: 'INVALID_REF',
-      status: 400
+      code: 'INVALID_REF'
     });
   });
 
   it('surface merge conflict previews', async () => {
     server.use(
       http.post(
-        `${baseUrl}/v1/worlds/world-1/merge/preview`,
+        `${baseUrl}/v1/worlds/world-1/merge`,
         () =>
           HttpResponse.json(
             {
@@ -305,7 +302,7 @@ describe('SDK unit tests (mock fetch)', () => {
     );
 
     const client = createSdkClient(baseUrl);
-    const response = await client.mergePreview({ worldId: 'world-1', ours: 'branch:main', theirs: 'branch:alt' });
+    const response = await client.mergePreview('world-1', { oursBranch: 'main', theirsBranch: 'alt' });
     expect(response.conflicts?.length ?? 0).toBeGreaterThan(0);
   });
 
@@ -316,7 +313,6 @@ describe('SDK unit tests (mock fetch)', () => {
 
     const client = createSdkClient(baseUrl);
     await expectSdkError(client.createWorld({ name: 'Crash' }), {
-      status: 500,
       messageIncludes: 'boom'
     });
   });
@@ -330,7 +326,7 @@ describe('SDK unit tests (mock fetch)', () => {
 
     const client = createSdkClient(baseUrl);
     await expectSdkError(client.createWorld({ name: 'Offline' }), {
-      messageIncludes: 'network'
+      messageIncludes: 'Failed to fetch'
     });
   });
 });

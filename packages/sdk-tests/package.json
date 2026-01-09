@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run typecheck && vitest run",
+    "test": "npm run typecheck && vitest run --reporter verbose",
     "test:unit": "vitest run src/unit",
     "test:integration": "vitest run src/integration",
     "test:contract": "vitest run src/contract",
