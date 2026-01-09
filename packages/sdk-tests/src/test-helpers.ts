@@ -1,10 +1,15 @@
 import * as sdk from '@worldfork/sdk';
+import { createRequire } from 'node:module';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_HEADERS = {
   'Content-Type': 'application/json'
 };
 
 export function createSdkClient(baseUrl: string): any {
+  assertPublishedSdkResolved();
   if ('createClient' in sdk && typeof sdk.createClient === 'function') {
     return (sdk as any).createClient({ baseUrl });
   }
@@ -15,6 +20,70 @@ export function createSdkClient(baseUrl: string): any {
     return new (sdk as any).default({ baseUrl });
   }
   throw new Error('Unable to construct SDK client: expected createClient or WorldForkClient export.');
+}
+
+type SdkResolutionInfo = {
+  resolvedPackageJson: string;
+  realpath: string;
+  isSymlink: boolean;
+  repoRoot: string;
+  nodeModulesPath: string;
+};
+
+let sdkResolutionCache: SdkResolutionInfo | null = null;
+
+export function getSdkResolutionInfo(): SdkResolutionInfo {
+  if (sdkResolutionCache) {
+    return sdkResolutionCache;
+  }
+
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(currentDir, '../../..');
+  const requireFn = createRequire(import.meta.url);
+  const resolvedPackageJson = requireFn.resolve('@worldfork/sdk/package.json');
+  const realpath = realpathSync(resolvedPackageJson);
+  const nodeModulesPath = path.resolve(repoRoot, 'node_modules', '@worldfork', 'sdk');
+  const isSymlink = existsSync(nodeModulesPath) ? lstatSync(nodeModulesPath).isSymbolicLink() : false;
+
+  sdkResolutionCache = {
+    resolvedPackageJson,
+    realpath,
+    isSymlink,
+    repoRoot,
+    nodeModulesPath
+  };
+
+  return sdkResolutionCache;
+}
+
+export function assertPublishedSdkResolved(): void {
+  const info = getSdkResolutionInfo();
+  console.info(
+    `[sdk-tests] @worldfork/sdk resolved to ${info.resolvedPackageJson} (realpath: ${info.realpath})`
+  );
+
+  const packagesSdkPath = path.resolve(info.repoRoot, 'packages', 'sdk');
+  if (info.realpath.startsWith(packagesSdkPath)) {
+    throw new Error(
+      [
+        'SDK resolution check failed: @worldfork/sdk is resolving to the workspace package.',
+        `Resolved path: ${info.realpath}`,
+        'This indicates a workspace link instead of the published npm package.',
+        'Fix: remove the workspace package or install with --workspaces=false, or run npm run sdk:test:published.'
+      ].join('\n')
+    );
+  }
+
+  if (info.isSymlink) {
+    throw new Error(
+      [
+        'SDK resolution check failed: node_modules/@worldfork/sdk is a symlink.',
+        `Symlink path: ${info.nodeModulesPath}`,
+        'This indicates a workspace link instead of the published npm package.',
+        'Fix: remove the workspace package or install with --workspaces=false, or run npm run sdk:test:published.'
+      ].join('\n')
+    );
+  }
 }
 
 export function buildJsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {

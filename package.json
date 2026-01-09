@@ -5,6 +5,9 @@
     "packages/*"
   ],
   "scripts": {
-    "sdk:test": "npm -w packages/sdk-tests test"
+    "sdk:test": "npm -w packages/sdk-tests test",
+    "sdk:test:published": "npm -w packages/sdk-tests run test:published",
+    "sdk:coverage": "npm -w packages/sdk-tests run test:coverage",
+    "openapi:export": "npm -w packages/sdk-tests exec -- tsx src/contract/openapi-export.ts"
   }
 }
