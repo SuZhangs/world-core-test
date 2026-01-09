@@ -40,7 +40,8 @@ export function getSdkResolutionInfo(): SdkResolutionInfo {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(currentDir, '../../..');
   const requireFn = createRequire(import.meta.url);
-  const resolvedPackageJson = requireFn.resolve('@worldfork/sdk/package.json');
+  const resolvedEntry = requireFn.resolve('@worldfork/sdk');
+  const resolvedPackageJson = findPackageJson(resolvedEntry);
   const realpath = realpathSync(resolvedPackageJson);
   const nodeModulesPath = path.resolve(repoRoot, 'node_modules', '@worldfork', 'sdk');
   const isSymlink = existsSync(nodeModulesPath) ? lstatSync(nodeModulesPath).isSymbolicLink() : false;
@@ -54,6 +55,22 @@ export function getSdkResolutionInfo(): SdkResolutionInfo {
   };
 
   return sdkResolutionCache;
+}
+
+function findPackageJson(resolvedEntry: string): string {
+  let currentDir = path.dirname(resolvedEntry);
+  while (true) {
+    const candidate = path.join(currentDir, 'package.json');
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) {
+      break;
+    }
+    currentDir = parent;
+  }
+  throw new Error(`Unable to locate package.json for resolved entry: ${resolvedEntry}`);
 }
 
 export function assertPublishedSdkResolved(): void {
